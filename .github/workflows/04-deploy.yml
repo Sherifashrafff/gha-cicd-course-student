@@ -8,7 +8,6 @@ on:
     workflows: ["03 Build Artifact Workflow"]
     # Start when the build workflow has completed.
     types: [completed]
-  workflow_dispatch:
 
 env:
   IMAGE_NAME: tiny-health-app
@@ -25,7 +24,8 @@ permissions:
 jobs:
   deploy-package:
     # Continue only when the build workflow succeeded.
-if: ${{ github.event.workflow_run.conclusion == 'success' }}    # Use a fresh runner for the deployment simulation.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Use a fresh runner for the deployment simulation.
     runs-on: ubuntu-latest
 
     steps:
@@ -63,13 +63,18 @@ if: ${{ github.event.workflow_run.conclusion == 'success' }}    # Use a fresh ru
             -p "${APP_PORT}:8000" \
             "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}"
 
-
-      - name: Verify container is running
-        run: docker ps
-
       - name: Smoke test deployed app
         # Retry a few times because app startup can take a moment.
-        run: curl "http://127.0.0.1:8080/health"
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent "http://127.0.0.1:${APP_PORT}/health"; then
+              exit 0
+            fi
+            echo "Waiting for app to become ready..."
+            sleep 2
+          done
+          echo "App did not become ready in time."
+          exit 1
 
       - name: Stop container
         if: always()
