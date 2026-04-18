@@ -69,7 +69,7 @@ jobs:
 
       - name: Smoke test deployed app
         # Retry a few times because app startup can take a moment.
-        run: curl "http://127.0.0.1:8000/health"
+        run: curl http://127.0.0.1:8000/health
 
       - name: Stop container
         if: always()
