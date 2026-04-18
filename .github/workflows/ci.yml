@@ -14,10 +14,13 @@ env:
   IMAGE_NAME: tiny-health-app
   IMAGE_TAR: tiny-health-app.tar
   ARTIFACT_NAME: tiny-health-app-image
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: myrepo
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
 
 jobs:
   verify:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
@@ -34,9 +37,11 @@ jobs:
   build-package:
     runs-on: ubuntu-latest
     needs: verify
-    # Only build and publish the artifact on push to main (or manual trigger),
-    # not on pull requests.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Check out repository
@@ -49,14 +54,40 @@ jobs:
           IMAGE_TAG="${TODAY}-${GITHUB_RUN_ID}"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Authenticate Docker to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
       - name: Build Docker image
         run: |
-          docker build \
-            -t "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}" \
-            .
+          docker build -t ${{ env.ECR_REPOSITORY }}:latest .
+
+      - name: Tag image for ECR
+        run: |
+          docker tag \
+            ${{ env.ECR_REPOSITORY }}:latest \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          docker tag \
+            ${{ env.ECR_REPOSITORY }}:latest \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.image_tag }}
+
+      - name: Push image to ECR
+        run: |
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.image_tag }}
 
       - name: Save Docker image as artifact file
-        run: docker save "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}" -o "${IMAGE_TAR}"
+        run: |
+          docker save \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.image_tag }} \
+            -o ${{ env.IMAGE_TAR }}
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
