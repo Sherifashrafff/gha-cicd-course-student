@@ -17,6 +17,8 @@ env:
   ARTIFACT_NAME: tiny-health-app-image
   AWS_REGION: us-east-1
   ECR_REPOSITORY: myrepo
+  # Set to "oidc" or "access-key" to choose the auth method
+  AWS_AUTH_METHOD: "access-key"
 
 jobs:
   verify:
@@ -40,7 +42,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     permissions:
-      id-token: write
+      id-token: write   # Required for OIDC — harmless to keep for access-key method
       contents: read
 
     steps:
@@ -54,10 +56,31 @@ jobs:
           IMAGE_TAG="${TODAY}-${GITHUB_RUN_ID}"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Configure AWS credentials
+      # ---------------------------------------------------------------
+      # AUTH METHOD 1 — OIDC (Recommended)
+      # Requires: AWS_ROLE_ARN, AWS_ACCOUNT_ID secrets
+      # No long-lived credentials stored in GitHub.
+      # To use: set AWS_AUTH_METHOD to "oidc" in env above.
+      # ---------------------------------------------------------------
+      - name: Configure AWS credentials (OIDC)
+        if: env.AWS_AUTH_METHOD == 'oidc'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ---------------------------------------------------------------
+      # AUTH METHOD 2 — Access Key & Secret Access Key
+      # Requires: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ACCOUNT_ID secrets
+      # Simpler to set up but less secure — keys are long-lived credentials.
+      # To use: set AWS_AUTH_METHOD to "access-key" in env above.
+      # ---------------------------------------------------------------
+      - name: Configure AWS credentials (Access Key)
+        if: env.AWS_AUTH_METHOD == 'access-key'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Authenticate Docker to ECR
