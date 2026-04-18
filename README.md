@@ -1,5 +1,5 @@
 # GitHub Actions CI/CD Course for Beginners......
-# GitHub Actions CI/CD Course for Beginners.......1
+# GitHub Actions CI/CD Course for Beginners.......1.
 
 ## What This Repository Is For
 
