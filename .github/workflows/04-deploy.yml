@@ -63,12 +63,13 @@ if: ${{ github.event.workflow_run.conclusion == 'success' }}    # Use a fresh ru
             -p "${APP_PORT}:8000" \
             "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}"
 
-      - name: Smoke test deployed app
-        # Retry a few times because app startup can take a moment.
-        run: curl "http://127.0.0.1:8080/health"
 
       - name: Verify container is running
         run: docker ps
+
+      - name: Smoke test deployed app
+        # Retry a few times because app startup can take a moment.
+        run: curl "http://127.0.0.1:8080/health"
 
       - name: Stop container
         if: always()
