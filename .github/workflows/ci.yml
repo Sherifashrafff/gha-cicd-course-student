@@ -47,7 +47,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      security-events: write   # Required to upload Trivy SARIF results to GitHub Security tab
+      security-events: write
 
     outputs:
       image_tag: ${{ steps.image-tag.outputs.image_tag }}
@@ -76,6 +76,7 @@ jobs:
       # ---------------------------------------------------------------
       # AUTH METHOD 1 — OIDC (Recommended)
       # Requires: AWS_ROLE_ARN, AWS_ACCOUNT_ID secrets
+      # No long-lived credentials stored in GitHub.
       # To use: set AWS_AUTH_METHOD to "oidc" in env above.
       # ---------------------------------------------------------------
       - name: Configure AWS credentials (OIDC)
@@ -88,6 +89,7 @@ jobs:
       # ---------------------------------------------------------------
       # AUTH METHOD 2 — Access Key & Secret Access Key
       # Requires: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ACCOUNT_ID secrets
+      # Simpler to set up but less secure — keys are long-lived credentials.
       # To use: set AWS_AUTH_METHOD to "access-key" in env above.
       # ---------------------------------------------------------------
       - name: Configure AWS credentials (Access Key)
@@ -112,20 +114,19 @@ jobs:
 
       # ---------------------------------------------------------------
       # TRIVY IMAGE SCAN
-      # Scans the freshly built image before it is pushed to ECR.
-      # - Uploads results to GitHub Security tab as SARIF.
-      # - Also prints a table to the workflow log for quick visibility.
-      # - Fails the workflow if vulnerabilities at TRIVY_FAIL_ON severity are found.
-      #   Set TRIVY_FAIL_ON to "" in env to disable blocking and scan only.
+      # Runs after build, before push — blocks a vulnerable image
+      # from ever reaching ECR.
+      # Step 1: SARIF scan — always completes, uploads to GitHub Security tab.
+      # Step 2: Table scan — prints to logs, fails if TRIVY_FAIL_ON severity found.
       # ---------------------------------------------------------------
       - name: Scan image with Trivy (SARIF upload)
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.ECR_REPOSITORY }}:latest
           format: sarif
           output: trivy-results.sarif
           severity: "CRITICAL,HIGH,MEDIUM"
-          exit-code: "0"   # Never fail here — we use the table scan below to control failure
+          exit-code: "0"
 
       - name: Upload Trivy SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
@@ -134,12 +135,12 @@ jobs:
           sarif_file: trivy-results.sarif
 
       - name: Scan image with Trivy (table — fail on severity)
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.ECR_REPOSITORY }}:latest
           format: table
           severity: ${{ env.TRIVY_FAIL_ON }}
-          exit-code: "1"   # Fail the workflow if vulnerabilities are found at this severity
+          exit-code: "1"
 
       - name: Tag image for ECR
         run: |
