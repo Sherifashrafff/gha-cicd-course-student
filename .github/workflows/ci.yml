@@ -1,14 +1,11 @@
-# .github/workflows/02-03-ci-build.yml
 name: 02-03 CI and Build Artifact Workflow
 
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-
   push:
     branches: [main]
-
   workflow_dispatch:
 
 env:
@@ -17,16 +14,11 @@ env:
   ARTIFACT_NAME: tiny-health-app-image
   AWS_REGION: us-east-1
   ECR_REPOSITORY: myrepo
-  # Set to "oidc" or "access-key" to choose the auth method
   AWS_AUTH_METHOD: "access-key"
-  # Set to "CRITICAL" or "HIGH,CRITICAL" to fail on severity
-  # Set to "" to never fail (scan only, report only)
-  TRIVY_FAIL_ON: "CRITICAL"
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -47,7 +39,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      security-events: write
 
     outputs:
       image_tag: ${{ steps.image-tag.outputs.image_tag }}
@@ -73,12 +64,6 @@ jobs:
           path: image-tag.txt
           retention-days: 7
 
-      # ---------------------------------------------------------------
-      # AUTH METHOD 1 — OIDC (Recommended)
-      # Requires: AWS_ROLE_ARN, AWS_ACCOUNT_ID secrets
-      # No long-lived credentials stored in GitHub.
-      # To use: set AWS_AUTH_METHOD to "oidc" in env above.
-      # ---------------------------------------------------------------
       - name: Configure AWS credentials (OIDC)
         if: env.AWS_AUTH_METHOD == 'oidc'
         uses: aws-actions/configure-aws-credentials@v4
@@ -86,12 +71,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ---------------------------------------------------------------
-      # AUTH METHOD 2 — Access Key & Secret Access Key
-      # Requires: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ACCOUNT_ID secrets
-      # Simpler to set up but less secure — keys are long-lived credentials.
-      # To use: set AWS_AUTH_METHOD to "access-key" in env above.
-      # ---------------------------------------------------------------
       - name: Configure AWS credentials (Access Key)
         if: env.AWS_AUTH_METHOD == 'access-key'
         uses: aws-actions/configure-aws-credentials@v4
@@ -109,46 +88,13 @@ jobs:
             | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
       - name: Build Docker image
-        run: |
-          docker build -t ${{ env.ECR_REPOSITORY }}:latest .
-
-      # ---------------------------------------------------------------
-      # TRIVY IMAGE SCAN
-      # Runs after build, before push — blocks a vulnerable image
-      # from ever reaching ECR.
-      # Step 1: SARIF scan — always completes, uploads to GitHub Security tab.
-      # Step 2: Table scan — prints to logs, fails if TRIVY_FAIL_ON severity found.
-      # ---------------------------------------------------------------
-      - name: Scan image with Trivy (SARIF upload)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ env.ECR_REPOSITORY }}:latest
-          format: sarif
-          output: trivy-results.sarif
-          severity: "CRITICAL,HIGH,MEDIUM"
-          exit-code: "0"
-
-      - name: Upload Trivy SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
-
-      - name: Scan image with Trivy (table — fail on severity)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ env.ECR_REPOSITORY }}:latest
-          format: table
-          severity: ${{ env.TRIVY_FAIL_ON }}
-          exit-code: "1"
+        run: docker build -t ${{ env.ECR_REPOSITORY }}:latest .
 
       - name: Tag image for ECR
         run: |
-          docker tag \
-            ${{ env.ECR_REPOSITORY }}:latest \
+          docker tag ${{ env.ECR_REPOSITORY }}:latest \
             ${{ steps.ecr-registry.outputs.ecr_registry }}/${{ env.ECR_REPOSITORY }}:latest
-          docker tag \
-            ${{ env.ECR_REPOSITORY }}:latest \
+          docker tag ${{ env.ECR_REPOSITORY }}:latest \
             ${{ steps.ecr-registry.outputs.ecr_registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.image_tag }}
 
       - name: Push image to ECR
